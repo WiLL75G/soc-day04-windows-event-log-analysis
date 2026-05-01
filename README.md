@@ -14,9 +14,9 @@
 
 ## Executive Summary
 
-This investigation focused on analyzing Windows Security logs to detect suspicious authentication attempts, unauthorized account creation, and abnormal process execution.
+> This investigation focused on analyzing Windows Security logs to detect suspicious authentication attempts, unauthorized account creation, and abnormal process execution.
 
-The objective was to identify potential signs of brute-force attacks, unauthorized access, and malware execution patterns using Event Viewer logs.
+> The objective was to identify potential signs of brute-force attacks, unauthorized access, and malware execution patterns using Event Viewer logs.
 
 ---
 
