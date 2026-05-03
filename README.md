@@ -185,7 +185,8 @@ This investigation demonstrates the ability to:
 ---
 
 
-# Windows Security Event ID Quick Reference
+
+## Windows Security Event ID Quick Reference
 
 | Event ID | Category      | Description                        | SOC Relevance          |
 |----------|---------------|------------------------------------|------------------------|
@@ -197,6 +198,8 @@ This investigation demonstrates the ability to:
 | 4688     | Process       | New process created                | Malicious binary?      |
 | 4698     | Task Scheduler| Scheduled task created             | Persistence mechanism? |
 | 7045     | System        | New service installed              | Malware install?       |
+
+
 
 
 
