@@ -184,6 +184,22 @@ This investigation demonstrates the ability to:
 
 ---
 
+
+# Windows Security Event ID Quick Reference
+
+| Event ID | Category      | Description                        | SOC Relevance          |
+|----------|---------------|------------------------------------|------------------------|
+| 4624     | Authentication| Successful logon                   | Off-hours? New IP?     |
+| 4625     | Authentication| Failed logon attempt               | Multiple = brute force |
+| 4720     | Account Mgmt  | New user account created           | Authorized?            |
+| 4722     | Account Mgmt  | User account enabled               | Dormant account woke?  |
+| 4732     | Group Mgmt    | User added to security group       | Privilege escalation?  |
+| 4688     | Process       | New process created                | Malicious binary?      |
+| 4698     | Task Scheduler| Scheduled task created             | Persistence mechanism? |
+| 7045     | System        | New service installed              | Malware install?       |
+
+
+
 ## Repository Structure
 
 ```
