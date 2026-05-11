@@ -222,4 +222,3 @@ This investigation demonstrates the ability to:
 ## Conclusion
 
 This analysis demonstrates how Windows Event Viewer can be used to detect suspicious authentication behavior and potential intrusion activity. By correlating login events and validating them through simulation, SOC analysts can confidently identify brute-force patterns and respond effectively.
-```
