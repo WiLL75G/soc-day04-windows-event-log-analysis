@@ -1,4 +1,4 @@
-# Day 04 – SOC Tier 1 Incident Report: Windows Event Viewer Investigation
+# SOC Tier 1 Incident Report: Windows Event Viewer Investigation
 
 ---
 
