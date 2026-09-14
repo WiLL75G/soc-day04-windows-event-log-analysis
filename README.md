@@ -1,157 +1,293 @@
 # Windows Event Log Investigation with Event Viewer
 
-Reading Windows Security logs the way a Tier 1 analyst has to read them: filtering to the Event IDs that matter, spotting a brute force pattern, and chaining events together instead of triaging them one at a time.
+I investigated repeated Windows authentication failures in Event Viewer, traced the activity to a controlled command line simulation, and used the event details to determine what actually happened.
+
+![Windows Brute Force Investigation Flow](./screenshots/00_architecture.png)
+
+The investigation moved from a controlled authentication simulation into the Windows Security log, where Event Viewer was used to isolate and inspect the relevant authentication events.
 
 ## At a Glance
 
 | Field | Detail |
 | --- | --- |
-| Alert Type | Suspicious Windows authentication activity |
-| Severity | Medium |
-| Detection Method | Windows Security log analysis in Event Viewer |
-| Tools Used | Event Viewer, eventvwr.msc |
-| Scope | Authentication and process execution events |
-| Outcome | Brute force pattern identified, activity confirmed as controlled lab simulation |
+| Activity | Repeated Windows authentication failures |
+| Investigation Type | Windows Security event investigation |
+| Detection Method | Event Viewer filtering and event detail analysis |
+| Tools Used | Event Viewer, `eventvwr.msc`, Command Prompt |
+| Host | `JAMES-VM` |
+| Investigated Account | `John` |
+| Primary Event ID | `4625` |
+| MITRE ATT&CK | `T1110` Brute Force |
+| Outcome | Repeated failed logons traced to a controlled lab simulation |
 
 ## What Happened
 
-Windows Security logs were reviewed for signs of brute force authentication, unauthorised account creation, and abnormal process execution.
+Windows Security logs were reviewed to investigate repeated authentication failures on `JAMES-VM`.
 
-The core skill here is not finding a bad event. It is knowing that a single event tells you almost nothing, and the story lives in the sequence.
+The investigation focused on identifying the relevant Windows Event IDs, inspecting the account information inside the events, and tracing the repeated failures back to the activity that generated them.
 
 ## Log Source Access
 
-Event Viewer was opened via eventvwr.msc and the investigation scoped to Windows Logs, then Security. That is where authentication and account management activity lands on a Windows host.
+Event Viewer was opened with:
 
-## Filtering the Noise
-
-![Event Viewer Filter](./screenshots/event_viewer_filter.png)
-
-The Security log records a huge volume of routine activity. Reading it unfiltered is how analysts miss things.
-
-Filter applied:
-
+```text
+eventvwr.msc
 ```
+
+The investigation was scoped to:
+
+```text
+Windows Logs → Security
+```
+
+This provided the Windows Security events needed for the authentication investigation.
+
+## Filtering the Security Log
+
+### Action
+
+I filtered the Security log for authentication, account creation, and process execution Event IDs.
+
+```text
 4624, 4625, 4720, 4688
 ```
 
-That narrows thousands of events down to four questions: who got in, who failed to get in, who was created, and what ran.
+### Evidence
 
-## Failed Login Attempts, Event ID 4625
+![Event Viewer Filter](./screenshots/event_viewer_filter.png)
+
+### Analyst Reasoning
+
+Filtering the Security log reduced the amount of unrelated Windows activity and provided a focused view of the Event IDs relevant to the investigation.
+
+The filter included:
+
+`4624` for successful logons
+
+`4625` for failed logons
+
+`4720` for account creation
+
+`4688` for process creation
+
+These Event IDs defined the investigation scope. Their inclusion in the filter does not mean every behavior was observed during the investigation.
+
+### Verdict
+
+The Security log was successfully scoped to the Windows events relevant to authentication and follow on investigation.
+
+## Investigating Event ID 4625
+
+### Action
+
+I reviewed the filtered Security log for repeated Event ID `4625` failed logons.
+
+### Evidence
 
 ![Brute Force Attempts](./screenshots/4625_brute_force.png)
 
+Multiple `4625` events appear within a short period in the filtered Security log.
+
+I then opened an individual event to inspect the authentication details.
+
 ![Event Details](./screenshots/4625_event_details.png)
 
-Multiple authentication failures were detected against the same username, clustered in a short time window.
+The event details identify:
 
-The username repetition is the tell. A real user who forgets a password fails two or three times and stops. An automated tool fails against the same account relentlessly because it is working through a list, not remembering.
+```text
+Event ID: 4625
+Account Name: John
+Computer: JAMES-VM
+Logon Type: 2
+Failure Reason: Unknown user name or bad password
+```
 
-Frequency and timing were analysed on the event details rather than the summary count, confirming the failures were machine paced.
+### Analyst Reasoning
+
+The event list established that the failures were repeated.
+
+Opening the individual `4625` event established which account was involved and provided the Windows authentication details behind the event.
+
+This moved the investigation from recognizing repeated failures to identifying the account associated with them.
+
+### Verdict
+
+Repeated failed authentication attempts were recorded against `John` on `JAMES-VM`.
 
 ## Simulation Evidence
 
-![Brute Force CMD](./screenshots/brute_force_simulation_cmd.png)
+### Action
 
-The failed logon events were generated by a controlled command line simulation on the lab host.
+I compared the Windows authentication events with the command line activity used to generate the lab behavior.
 
-This is the honest part of the lab. The 4625 events are real Windows events, but the source is documented, so the detection logic is validated against a known cause rather than assumed from ambiguous data.
+### Evidence
+
+![Brute Force Simulation](./screenshots/brute_force_simulation_cmd.png)
+
+The Command Prompt shows repeated attempts using:
+
+```text
+runas /user:John cmd
+```
+
+The attempts returned:
+
+```text
+1326: The user name or password is incorrect.
+```
+
+### Analyst Reasoning
+
+The command line evidence provides the known cause of the repeated authentication failures.
+
+The account targeted by the simulation matches the `John` account identified inside the `4625` event details.
+
+This allowed the Windows telemetry to be correlated with the controlled activity that generated it.
+
+### Verdict
+
+The repeated `4625` failures against `John` were generated by the documented command line simulation on the lab host.
+
+## Authentication Correlation
+
+The filtered Security log also contained successful logon activity.
+
+A nearby `4624` should not automatically be interpreted as the brute forced account successfully authenticating. The account information inside the event must match the account involved in the preceding failures.
+
+In this investigation, the nearby successful authentication belonged to `william`, while the repeated failures were associated with `John`.
+
+No evidence reviewed in this investigation established a successful authentication for `John`.
+
+No `4688` process execution evidence was available to establish follow on execution associated with the investigated account.
+
+### Verdict
+
+The available evidence supports repeated failed authentication against `John`. It does not establish that `John` successfully authenticated or that follow on process execution occurred.
 
 ## Detection Logic
 
-Suspicious behaviour on a Windows host is flagged when:
+The investigation suggests several useful Windows authentication detection conditions:
 
-Multiple failed logons hit the same account in a short window.
+```text
+Multiple 4625 events against the same account within a defined time window
 
-A successful logon follows a run of failures.
+4624 success for the same account following repeated 4625 failures
 
-A new account appears without a change request behind it.
+4720 account creation that requires validation against expected administrative activity
 
-Process execution follows shortly after an authentication event.
-
-## Attack Chain Analysis
-
-The pattern that matters is the sequence, not the events:
-
-```
-4625 → 4625 → 4625 → 4624 → 4688
+4688 process execution following suspicious authentication activity
 ```
 
-Read left to right: repeated failures, then a success, then something executed.
+These are investigation and detection pivots.
 
-Each of those events is unremarkable alone. 4624 fires thousands of times a day on a healthy host. 4688 fires constantly. It is only the order that turns them into a story, and that story is guessing, getting in, and doing something.
-
-That transition from 4625 to 4624 is the moment a scan becomes an incident. An analyst who only counts failures never sees it.
+Only the repeated `4625` activity against `John` is confirmed by the evidence presented in this project.
 
 ## MITRE ATT&CK Mapping
 
-| Behaviour | Technique ID | Description |
+| Observed Behaviour | Technique ID | Technique |
 | --- | --- | --- |
-| Repeated authentication failures | T1110 | Brute force |
-| Successful logon after failures | T1078 | Valid accounts |
-| Unexpected account creation | T1136 | Create account, persistence |
-| Post logon process execution | T1059 | Command and scripting interpreter |
+| Repeated authentication attempts against a single account | T1110 | Brute Force |
+
+The investigation filter also included Event IDs related to successful authentication, account creation, and process execution.
+
+Those behaviors are not mapped as confirmed activity because the available project evidence does not establish them as part of the simulated authentication activity.
+
+## Investigation Findings
+
+The investigation established:
+
+* Multiple Event ID `4625` failures were recorded.
+* The inspected failed logon identified the account as `John`.
+* The activity occurred on `JAMES-VM`.
+* The command line simulation repeatedly targeted `John`.
+* The simulation returned incorrect username or password errors.
+* The Windows events could therefore be correlated with a documented lab activity.
+* A nearby successful logon was associated with a different account.
+* The available evidence did not establish a successful authentication for `John`.
+* No `4688` evidence was available to demonstrate follow on process execution associated with the investigated activity.
 
 ## Analyst Conclusion
 
-Repeated authentication failures confirmed against a single account.
+Repeated Windows authentication failures were confirmed against `John` on `JAMES-VM`.
 
-Pattern consistent with automated password guessing.
+The Event Viewer evidence was correlated with the documented `runas` simulation that generated the failed authentication attempts.
 
-Source traced to a documented lab simulation, so no compromise occurred.
+The available evidence supports repeated password guessing behavior generated during the controlled lab simulation. It does not establish a successful authentication for `John` or follow on process execution.
 
-Detection logic validated against a known cause, which is the point of running it in a lab first.
+**Verdict:** Controlled repeated authentication failure activity confirmed through Windows Security telemetry.
 
 ## Recommended Response
 
-Alert on 4625 volume thresholds per account rather than reviewing them by hand.
+In a production SOC investigation, I would:
 
-Trace the source of the login attempts before assuming they are noise.
-
-Validate every 4720 account creation against an approved change.
-
-Review 4688 process execution following any successful logon that came after a failure run.
-
-Escalate immediately if this sequence appears outside a controlled environment.
+* Alert on repeated `4625` activity against the same account within a defined time window.
+* Inspect the account, logon type, source information, and failure reason inside the events.
+* Search for a later `4624` involving the same account.
+* Review relevant process execution telemetry when suspicious authentication succeeds.
+* Validate unexpected account creation against approved administrative activity.
+* Escalate when authentication and follow on evidence indicate unauthorized access.
 
 ## Windows Security Event ID Quick Reference
 
-| Event ID | Category | Description | Why It Matters |
+| Event ID | Category | Description | Investigation Value |
 | --- | --- | --- | --- |
-| 4624 | Authentication | Successful logon | Off hours, unfamiliar source |
-| 4625 | Authentication | Failed logon attempt | Repeats mean brute force |
-| 4720 | Account management | New user account created | Was it authorised |
-| 4722 | Account management | User account enabled | Dormant account woke up |
-| 4732 | Group management | User added to security group | Privilege escalation |
-| 4688 | Process | New process created | What actually ran |
-| 4698 | Task scheduler | Scheduled task created | Persistence mechanism |
-| 7045 | System | New service installed | Common malware install path |
+| 4624 | Authentication | Successful logon | Determine whether authentication succeeded |
+| 4625 | Authentication | Failed logon | Investigate repeated authentication failures |
+| 4720 | Account Management | User account created | Validate unexpected account creation |
+| 4722 | Account Management | User account enabled | Review unexpected account activation |
+| 4732 | Group Management | Member added to local security group | Investigate unexpected privilege changes |
+| 4688 | Process | New process created | Identify execution following suspicious activity |
+| 4698 | Task Scheduler | Scheduled task created | Investigate scheduled task creation |
+| 7045 | System | New service installed | Investigate unexpected service installation |
 
-## What This Lab Demonstrates
+## SOC Investigation Value
 
-Navigating the Windows Security log and filtering it to a purpose instead of scrolling it.
+This project demonstrates:
 
-Recognising brute force by pacing and username repetition, not raw count alone.
+* Navigating the native Windows Security log
+* Filtering Event Viewer by relevant Event IDs
+* Investigating Event ID `4625`
+* Reading account information inside individual Windows events
+* Correlating Windows telemetry with the activity that generated it
+* Distinguishing one account's failed authentication from another account's successful logon
+* Separating observed behavior from additional investigation pivots
+* Mapping verified authentication behavior to MITRE ATT&CK
 
-Correlating authentication events with process execution into an attack chain.
+## Lessons Learned
 
-Validating detection logic against a known, documented cause.
+The most useful part of this investigation was checking the account information inside the authentication events.
 
-Mapping each stage of the chain to MITRE ATT&CK.
+The filtered view contained both failed and successful logon activity, but the successful event belonged to a different account. Matching the account name across the events prevented the nearby `4624` from being incorrectly attributed to `John`.
+
+This reinforced that Windows Event IDs provide the event category, while the fields inside the event provide the context needed to interpret what happened.
+
+## What I Would Improve
+
+I would extend this investigation by correlating `4625` and `4624` events by account name within a defined time window. That would make it easier to identify when repeated failures against one account are followed by a successful authentication for that same account.
+
+I would also collect and correlate process execution telemetry when authentication succeeds. That would allow the investigation to move from authentication analysis into determining what occurred after logon.
 
 ## Repository Structure
 
-```
+```text
 .
 ├── README.md
-├── screenshots/
-│   ├── event_viewer_filter.png
-│   ├── 4625_brute_force.png
-│   ├── 4625_event_details.png
-│   ├── brute_force_simulation_cmd.png
+└── screenshots/
+    ├── 00_architecture.png
+    ├── event_viewer_filter.png
+    ├── 4625_brute_force.png
+    ├── 4625_event_details.png
+    └── brute_force_simulation_cmd.png
 ```
 
 ---
 
+## Author
+
+**William Gokah**
+
+SOC Analyst Portfolio
+
 [![LinkedIn](https://img.shields.io/badge/LinkedIn-WilliamInCyber-blue?style=flat&logo=linkedin)](https://linkedin.com/in/WilliamInCyber)
+
 [![X](https://img.shields.io/badge/X-WilliamInCyber-black?style=flat&logo=x)](https://x.com/WilliamInCyber)
